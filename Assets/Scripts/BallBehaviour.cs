@@ -19,11 +19,11 @@ public class BallBehaviour : MonoBehaviour {
     Vector2 error;
     Vector2 last_error;
     GameObject[] players;
-    const float integrating_dampener = 0.9f;
+    const float integrating_dampener = 1f;
     const float general_dampener = 1f;
-    const float proportional_c = 6.5f;
-    const float integrating_c = 1.4f;
-    const float derivating_c = 1.2f;
+    const float proportional_c =12f;
+    const float integrating_c = 2f;
+    const float derivating_c = 1f;
 
     Vector2 maxVelocity = new Vector2(200,200);
 

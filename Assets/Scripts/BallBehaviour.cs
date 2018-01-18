@@ -18,38 +18,46 @@ public class BallBehaviour : MonoBehaviour {
     Vector2 derivative;
     Vector2 error;
     Vector2 last_error;
+    Vector2 velocity;
     GameObject[] players;
-    const float integrating_dampener = 1f;
+    const float integrating_dampener = 0.9f;
     const float general_dampener = 1f;
-    const float proportional_c =12f;
-    const float integrating_c = 2f;
+    const float proportional_c = 2f;
+    const float integrating_c = 1f;
     const float derivating_c = 1f;
+    float margin = 10;
+    Vector2 offset;
+    float total_influence;
 
-    Vector2 maxVelocity = new Vector2(200,200);
+    Vector2 p1diff, p2diff;
+
+    Vector2 maxVelocity = new Vector2(300,300);
 
 	// Use this for initialization
 	void Start () {
         body = GetComponent<Rigidbody2D>();
-        players = GameObject.FindGameObjectsWithTag("Player");
+        players = GameObject.FindGameObjectsWithTag(Constants.player_tag);
 
     }
 	
     void PID(influencer[] influencers)
     {
-        Vector2 velocity;
-
+        //linear interpolation to get a target in between the two influencers corresponding to their influence
         target = calculate_target(influencers);
-        Debug.DrawLine(new Vector3(target.x-10,target.y-10,0), new Vector3(target.x+10, target.y+10, 0), Color.red);
+        //but we can't let the point be AT the player, because then the ball will just keep pushing that player out
+        //we add margins so that the target gets close to but not in the face of, a player
+        //target = add_margins(influencers[0].position, influencers[1].position,target);
 
         last_error = error;
         error = target - body.position;
-        integral *= integrating_dampener;
+
         integral += last_error;
+        integral *= integrating_dampener;
         derivative = error - last_error;
 
         //PID controller below
         velocity = proportional_c * error + integrating_c * integral + derivating_c * derivative;
-        velocity *= general_dampener;
+
         if(Math.Abs(velocity.x) > maxVelocity.x)
         {
             velocity.x = velocity.x > 0 ? maxVelocity.x : -maxVelocity.x;
@@ -58,17 +66,7 @@ public class BallBehaviour : MonoBehaviour {
         {
             velocity.y = velocity.y > 0 ? maxVelocity.y : -maxVelocity.y;
         }
-        /*
-        Debug.Log(
-            String.Format(
-            "target: x:{0} y:{1} \n" +
-            "error: x:{2} y:{3} \n" +
-            "velocity: x:{4} y:{5} \n",
-            target.x,target.y,
-            error.x, error.y,
-            velocity.x,velocity.y)
-            );
-            */
+      
         body.velocity = velocity;
 
         
@@ -76,20 +74,12 @@ public class BallBehaviour : MonoBehaviour {
 
     private Vector2 calculate_target(influencer[] influencers)
     {
-        //This only supports two influencers for now
-        //TODO: n influencer targets? i.e 3 players and up
+        return lerpVec2(influencers[0].position, influencers[1].position, influencers[0].influence, influencers[1].influence);
+    }
 
-        //linear interpolation to get a target in between the two influencers corresponding to their influence
-        return           influencers[0].position 
-                         + (
-                                influencers[0].influence
-                                    / 
-                                (influencers[0].influence+ influencers[1].influence) 
-                            )
-                            * (influencers[1].position - influencers[0].position); 
-
-
-
+    private Vector2 lerpVec2(Vector2 pos1, Vector2 pos2,float val1,float val2)
+    {
+        return pos1 + (val1 / (val1 + val2)) * (pos2 - pos1);
     }
 
     // Update is called once per frame

@@ -3,109 +3,155 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+
 public class PlayerBehaviour : MonoBehaviour
 {
-
-
-    public int influence = 1;
-    int concentration = 1000; //Depletes while using power
-    int maxConcentration = 1000;
-    int minConcentration = 0;
-    private string movement_axis_hor, movement_axis_vert;
+    //Control and id
     public int player_id = 1;
-    float horInput;
-    float vertInput;
+    private string movement_axis_hor, movement_axis_vert;
     Dictionary<string, float> inputs = new Dictionary<string, float>();
-    ContactPoint2D[] contacts = { };
-    Vector2 jumpForce = new Vector2(0, 100);
-    Vector2 motionForce = new Vector2(1000, 0);
+
+    //handles
+    Rigidbody2D body;
+    Rigidbody2D ballBody;
+
+    private float concentration; //Depletes while using power
+    private float internalInfluence;
+    public float influence;
+    const float maxConcentration = 1000;
+    const float minConcentration = 0;
+    const float maxInfluence = 1000;
+    const float minInfluence = 1;
+    const float rechargeLimit = 80;//The point at which influence stops depleting
+    const float rechargeStep = 1;
+    const float depleteStep = 5;
+    const float velocityInfluenceDampenerX = 0.4f;
+    const float velocityInfluenceDampenerY = 0.1f;
+    const float distMax=160;//Top of the dist influence range
+    const float distMin=10;//Bottom of the dist influence range
+
+    //Movement
+    Boolean grounded, jumpReset;
     Vector2 maxVelocity = new Vector2(150, 150);
     Vector2 tempVelocity = new Vector2();
-    Boolean canJump = false;
-
-    Rigidbody2D body;
-    CapsuleCollider2D capCollider2D;
+    Vector2 motionForce = new Vector2(2000, 0);
+    Vector2 jumpVelocity = new Vector2(0, 300);
+    const float lessGravity = 50;
+    const float normalGravity = 90;
 
     // Use this for initialization
     void Start()
     {
+        ballBody =GameObject.FindGameObjectWithTag(Constants.ball_tag).GetComponent<Rigidbody2D>();
+        body = GetComponent<Rigidbody2D>();
 
-        influence = 1;
         // The axes names are based on player number.
         movement_axis_hor = "Horizontal" + player_id;
         movement_axis_vert = "Vertical" + player_id;
         gameObject.SetActive(true);
-        body = GetComponent<Rigidbody2D>();
-        capCollider2D = GetComponent<CapsuleCollider2D>();
+        concentration = maxConcentration;
     }
 
     // Update is called once per frame
     void Update()
     {
         getInputs();
+       
 
-        if (inputs["telekinesis"] == 1)
+        if (inputs["telekinesis"] > 0)
         {
-            influence = concentration;
+            internalInfluence += concentration;
             concentration -= 15;
         }
         else
         {
-            influence = 1;
             concentration += 10;
+            internalInfluence -= depleteStep;
         }
+        
 
-        if (inputs["jump"] == 1)
+        if (inputs["jump"] > 0)
         {
             jump();
         }
-
+        else
+        {
+            jumpReset = true;
+            body.gravityScale = normalGravity;
+        }
+        limitPowers();
+        calcConcentration();
+        calcInfluence();
         body.AddForce(motionForce * inputs["horizontal"]);
 
 
         limitVelocity();
-        limitPowers();
-
+        grounded = false;
     }
+
     void getInputs()
     {
         inputs["horizontal"] = Input.GetAxis(movement_axis_hor);
         inputs["jump"] = Input.GetAxis(movement_axis_vert);
-
         //TODO change this to a better mapping for controllers
         inputs["telekinesis"] = inputs["jump"] < 0 ? 1 : 0;
     }
 
     void jump()
     {
-
-        capCollider2D.GetContacts(contacts);
-        
-        Debug.Log(String.Format(
-                "playerId{0}\n" +
-                "collider is active?: {1}\n" +
-                "contacts:{2}\n\n",
-                player_id,
-                capCollider2D.isActiveAndEnabled,
-                contacts.Length
-                ));
-        foreach (var contact in contacts)
+        if (grounded && jumpReset) {
+            body.velocity += jumpVelocity;
+            jumpReset = false;
+        }
+        else
         {
-            Debug.Log(
-                String.Format(
-                "playerId{0}\n" +
-                "touching something\n\n", player_id
-                ));
-            if (contact.point.y < body.position.y)
-            {
-                Debug.Log(
-                String.Format(
-                "playerId{0}\n" +
-                "touching something below\n\n", player_id
-                ));
-            }
+            body.gravityScale = lessGravity;
+        }
+    }
+
+    void calcConcentration()
+    {
+        if (concentration < rechargeLimit)
+        {
+            concentration += rechargeStep;
         }
 
+    }
+
+    void calcInfluence()
+    {
+        if (internalInfluence < rechargeLimit)
+        {
+            internalInfluence += rechargeStep;
+        }
+        else
+        {
+            internalInfluence -= depleteStep;
+        }
+
+        //The faster you're moving the less you can concentrate
+        internalInfluence *= 1-Math.Abs(body.velocity.normalized.x)*velocityInfluenceDampenerX;
+        internalInfluence *= 1-Math.Abs(body.velocity.normalized.y)*velocityInfluenceDampenerY;
+
+        influence = internalInfluence;
+        //The closer to the ball you are, the more you can influence it
+        float dist = (body.position - ballBody.position).magnitude;
+        dist = dist < distMin ? distMin:(dist>distMax?distMax:dist);
+        float distInf = dist / distMax;
+        //Dist is between 10 and 160, so 
+        influence /= 1000+distInf;
+    }
+    private void OnCollisionStay2D(Collision2D collision)
+    {
+        foreach (var contact in collision.contacts)
+        {
+            if (contact.point.y < body.position.y)
+            {
+                grounded = true;
+                return;
+            }
+        }
+        
     }
     void limitVelocity()
     {
@@ -126,24 +172,8 @@ public class PlayerBehaviour : MonoBehaviour
         concentration = concentration < minConcentration ? minConcentration : concentration;
         concentration = concentration > maxConcentration ? maxConcentration : concentration;
 
-        influence = influence < minConcentration ? minConcentration : influence;
-        influence = influence > maxConcentration ? maxConcentration : influence;
+        internalInfluence = internalInfluence < minInfluence ? minInfluence : internalInfluence;
+        internalInfluence = internalInfluence > maxInfluence ? maxInfluence : internalInfluence;
     }
-    void OnCollisionEnter2D(Collision2D collision)
-    {
-    }
-    private void OnCollisionStay2D(Collision2D collision)
-    {
-        foreach (var contact in collision.contacts)
-        {
-            if (contact.point.y < body.position.y)
-            {
-                canJump = true;
-            }
-        }
-    }
-    void OnCollisionExit2D(Collision2D collision)
-    {
-        
-    }
+
 }
